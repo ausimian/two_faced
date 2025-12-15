@@ -41,4 +41,17 @@ defmodule TwoFacedTest do
     assert Process.alive?(pid)
     assert map_size(:sys.get_state(pid)) == 1
   end
+
+  test "start_child/2 with raw child spec", %{sup: sup} do
+    child_spec = %{
+      id: TestServer,
+      start: {TestServer, :start_link, [[phase1: :ok, phase2: :ok]]},
+      restart: :temporary,
+      type: :worker
+    }
+
+    assert {:ok, pid} = TwoFaced.start_child(sup, child_spec)
+    assert Process.alive?(pid)
+    assert %{phase1: :ok, phase2: :ok} = :sys.get_state(pid)
+  end
 end

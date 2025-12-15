@@ -138,4 +138,5 @@ defmodule TwoFaced do
 
   defp get_args({_mod, args}), do: args
   defp get_args(mod) when is_atom(mod), do: []
+  defp get_args(%{start: {_mod, _fun, [args]}}), do: args
 end
