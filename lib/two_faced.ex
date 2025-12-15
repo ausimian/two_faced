@@ -77,6 +77,20 @@ defmodule TwoFaced do
 
   @doc """
   Second stage initialization callback.
+
+  This function is called after the process has been started. It receives the
+  server PID and the arguments passed during startup. It should return `:ok` on
+  successful initialization or `{:error, reason}` if initialization fails.
+
+  ## Parameters
+
+    - `server`: The PID or name of the server process.
+    - `args`: The arguments provided during the process startup.
+
+  ## Returns
+
+    - `:ok` if the second stage initialization is successful.
+    - `{:error, reason}` if the initialization fails.
   """
   @callback init(server(), any()) :: return()
 
@@ -86,6 +100,20 @@ defmodule TwoFaced do
     end
   end
 
+  @doc """
+  Starts a child process under the given `supervisor` and performs two-phase
+  initialization.
+
+  ## Parameters
+
+    - `supervisor`: The PID or name of the DynamicSupervisor.
+    - `child_spec`: The child specification for the process to be started.
+
+  ## Returns
+    - `{:ok, pid}` if the process starts and initializes successfully.
+    - `{:ok, pid, info}` if the process starts with additional info and initializes successfully.
+    - `{:error, reason}` if starting or initialization fails.
+  """
   def start_child(supervisor, child_spec) do
     case DynamicSupervisor.start_child(supervisor, child_spec) do
       {:ok, pid} ->

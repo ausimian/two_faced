@@ -15,7 +15,7 @@ defmodule TwoFaced.MixProject do
       description: description(),
       package: package(),
       docs: docs(),
-      source_url: "https://github.com/YOUR_USERNAME/two_faced"
+      source_url: "https://github.com/ausimian/two_faced"
     ]
   end
 
@@ -45,16 +45,15 @@ defmodule TwoFaced.MixProject do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => "https://github.com/ausimian/two_faced"},
-      files: ~w(lib .formatter.exs mix.exs README.md LICENSE)
+      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 
   defp docs do
     [
-      main: "TwoFaced",
-      source_url: "https://github.com/YOUR_USERNAME/two_faced",
+      main: "readme",
       source_ref: "#{@version}",
-      extras: ["README.md"]
+      extras: ["README.md", "CHANGELOG.md"]
     ]
   end
 end
