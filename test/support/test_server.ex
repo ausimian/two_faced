@@ -1,6 +1,5 @@
 defmodule TestServer do
   use GenServer, restart: :temporary
-  use TwoFaced
 
   def start_link(args) do
     if info = Keyword.get(args, :info) do
@@ -12,16 +11,11 @@ defmodule TestServer do
     end
   end
 
-  @impl TwoFaced
-  def init(server, args) do
-    GenServer.call(server, {:init, args})
-  end
-
   @impl GenServer
   def init(args) do
     case Keyword.get(args, :phase1, :ok) do
       :ok ->
-        {:ok, %{}}
+        {:ok, %{}, {:continue, {:init, args}}}
 
       {:error, reason} ->
         {:error, reason}
@@ -29,13 +23,29 @@ defmodule TestServer do
   end
 
   @impl GenServer
-  def handle_call({:init, args}, _from, state) do
+  def handle_continue({:init, args}, state) do
+    if delay = Keyword.get(args, :init_delay) do
+      :timer.sleep(delay)
+    end
+
     case Keyword.get(args, :phase2, :ok) do
       :ok ->
-        {:reply, :ok, Map.new(args)}
+        {:noreply, Map.new(args)}
 
       {:error, reason} ->
-        {:stop, reason, {:error, reason}, state}
+        {:stop, reason, state}
+
+      {:badmatch, v, v} ->
+        {:noreply, state}
+
+      {:raise, exception} ->
+        raise exception
     end
+  end
+
+  @impl GenServer
+  def handle_info({TwoFaced, :ack, ref}, state) do
+    TwoFaced.acknowledge(ref)
+    {:noreply, state}
   end
 end

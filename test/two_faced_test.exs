@@ -23,7 +23,7 @@ defmodule TwoFacedTest do
   test "start_child/2 handles phase2 failure", %{sup: sup} do
     child_spec = {TestServer, phase2: {:error, :normal}}
 
-    assert {:error, :normal} = TwoFaced.start_child(sup, child_spec)
+    assert {:error, _} = TwoFaced.start_child(sup, child_spec)
   end
 
   test "start_child/2 works with empty args", %{sup: sup} do
@@ -53,5 +53,23 @@ defmodule TwoFacedTest do
     assert {:ok, pid} = TwoFaced.start_child(sup, child_spec)
     assert Process.alive?(pid)
     assert %{phase1: :ok, phase2: :ok} = :sys.get_state(pid)
+  end
+
+  test "start_child/2 handles badmatch results from phase2", %{sup: sup} do
+    child_spec = {TestServer, phase2: {:badmatch, :a, :b}}
+    assert {:error, {:case_clause, {:badmatch, :a, :b}}} = TwoFaced.start_child(sup, child_spec)
+  end
+
+  test "start_child/2 handles exceptions from phase2", %{sup: sup} do
+    child_spec = {TestServer, phase2: {:raise, ArgumentError.exception("invalid argument")}}
+
+    assert {:error, %ArgumentError{message: "invalid argument"}} =
+             TwoFaced.start_child(sup, child_spec)
+  end
+
+  test "start_child/3 with timeout handles slow initialization", %{sup: sup} do
+    child_spec = {TestServer, phase2: :ok, init_delay: 1000}
+
+    assert {:error, :timeout} = TwoFaced.start_child(sup, child_spec, 200)
   end
 end

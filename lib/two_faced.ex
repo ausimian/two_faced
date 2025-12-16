@@ -1,128 +1,111 @@
 defmodule TwoFaced do
   @moduledoc """
-  Two-phase initialization for OTP-compliant processes.
+  Two-phase child process initialization for OTP-compliant processes.
 
-  This module provides a mechanism to perform a second stage of initialization
-  after a process has been started. It defines a behaviour with a callback `init/2`
-  that must be implemented by modules using this functionality.
+  This module provides functionality to start child processes that require
+  two-phase initialization. It is particularly useful when using dynamic
+  supervisors where the child process needs to perform lengthy initialization
+  without blocking the supervisor.
 
-  The purpose of this design is to allow processes to complete their initial setup
-  in two distinct phases, which can be useful in scenarios where long-running
-  initialization risks blocking dynamic supervisors.
+  Applications that wish to utilize this functionality should:
+
+  1. Define their child processes to support a two-phase initialization pattern.
+  2. Parent their child processes under a DynamicSupervisor.
+  3. Use `start_child/2` or `start_child/3` to start and initialize the child processes.
+
+  Handling two-pase initialization means deferring long-running setup tasks via
+  handle_continue/2 callbacks in GenServer or similar OTP behaviours, and handling
+  an acknowledgment message (of type `t:ack_request/0`) to signal completion.
 
   ## Example
-
-      defmodule MyWorker do
+      defmodule MyServer do
         use GenServer
-        @behaviour TwoFaced
-
-        def start_link(args) do
-          GenServer.start_link(__MODULE__, args)
-        end
-
-        @impl TwoFaced
-        def init(server, args) do
-          # Second stage initialization
-          GenServer.call(server, {:init, args})
-        end
 
         @impl GenServer
         def init(args) do
-          # First stage initialization
-          {:ok, %{}}
+          {:ok, %{}, {:continue, {:init, args}}}
         end
 
         @impl GenServer
-        def handle_call({:init, args}, _from, state) do
-          # Perform additional setup
-          new_state = perform_additional_setup(state, args)
-          {:reply, :ok, new_state}
-        end
-      end
-
-      # Starting the worker under a DynamicSupervisor
-      DynamicSupervisor.start_child(supervisor, {MyWorker, initial_args})
-
-  ## Handling Errors
-
-  If the second stage initialization fails, the process should ensure that it
-  replies _and then terminates_.
-
-      defmodule MyFailingWorker do
-        use GenServer
-        @behaviour TwoFaced
-
-        @impl TwoFaced
-        def init(server, args) do
-          # Second stage initialization
-          GenServer.call(server, {:init, args})
+        def handle_continue({:init, args}, state) do
+          # Perform lengthy initialization here
+          :timer.sleep(2000)
+          {:noreply, state}
         end
 
         @impl GenServer
-        def handle_call({:init, args}, _from, state) do
-          case maybe_failing_setup() do
-            {:ok, new_state} ->
-              {:reply, :ok, new_state}
-
-            {:error, reason} ->
-              # Reply and then terminate
-              {:stop, reason, {:error, :failed}, state}
-          end
+        # Acknowledge initialization completion
+        def handle_info({TwoFaced, :ack, ref}, state) do
+          send(ref, {:ack, ref})
+          {:noreply, state}
         end
       end
+
+      {:ok, sup} = DynamicSupervisor.start_link(strategy: :one_for_one)
+      child_spec = {MyServer, some_arg: :value}
+      {:ok, pid} = TwoFaced.start_child(sup, child_spec)
+      true = Process.alive?(pid)
   """
 
-  @type server :: GenServer.server()
-  @type return :: :ok | {:error, any()}
+  @type ack_request() :: {TwoFaced, :ack, reference()}
+  @type ack_response() :: {:ack, reference()}
+
+  @type child_spec ::
+          Supervisor.child_spec()
+          | {module, term}
+          | module
+          | :supervisor.child_spec()
 
   @doc """
-  Second stage initialization callback.
+  Sends an acknowledgment message to the given reference.
 
-  This function is called after the process has been started. It receives the
-  server PID and the arguments passed during startup. It should return `:ok` on
-  successful initialization or `{:error, reason}` if initialization fails.
+  This function is typically called from within the child process on receipt of the
+  acknowledgment request message sent by `TwoFaced.start_child/2,3`.
 
-  ## Parameters
-
-    - `server`: The PID or name of the server process.
-    - `args`: The arguments provided during the process startup.
-
-  ## Returns
-
-    - `:ok` if the second stage initialization is successful.
-    - `{:error, reason}` if the initialization fails.
+  ## Example
+      def handle_info({TwoFaced, :ack, ref}, state) do
+        TwoFaced.acknowledge(ref)
+        {:noreply, state}
+      end
   """
-  @callback init(server(), any()) :: return()
-
-  defmacro __using__(_opts) do
-    quote do
-      @behaviour TwoFaced
-    end
+  @spec acknowledge(reference()) :: :ok
+  def acknowledge(ref) when is_reference(ref) do
+    send(ref, {:ack, ref})
+    :ok
   end
 
   @doc """
-  Starts a child process under the given `supervisor` and performs two-phase
-  initialization.
-
-  ## Parameters
-
-    - `supervisor`: The PID or name of the DynamicSupervisor.
-    - `child_spec`: The child specification for the process to be started.
-
-  ## Returns
-    - `{:ok, pid}` if the process starts and initializes successfully.
-    - `{:ok, pid, info}` if the process starts with additional info and initializes successfully.
-    - `{:error, reason}` if starting or initialization fails.
+  Same as `start_child/3` with a default timeout of 5000 milliseconds.
   """
-  def start_child(supervisor, child_spec) do
-    case DynamicSupervisor.start_child(supervisor, child_spec) do
+  @spec start_child(Supervisor.supervisor(), child_spec()) :: DynamicSupervisor.on_start_child()
+  def start_child(sup, child_spec) do
+    start_child(sup, child_spec, 5_000)
+  end
+
+  @doc """
+  Starts a child process under the given supervisor and waits for its
+  two-phase initialization to complete.
+
+  After starting the child process, this function sends an acknowledgment
+  request message to the child and waits for an acknowledgment response
+  within the specified timeout period. If the acknowledgment is received within
+  the timeout, it returns `{:ok, pid}` or `{:ok, pid, info}`.
+
+  If the timeout is exceeded, the child process is terminated and
+  `{:error, :timeout}` is returned. If the child process terminates before
+  sending the acknowledgment, the termination reason is returned as an error.
+  """
+  @spec start_child(Supervisor.supervisor(), child_spec(), non_neg_integer()) ::
+          DynamicSupervisor.on_start_child()
+  def start_child(sup, child_spec, timeout) when is_integer(timeout) and timeout >= 0 do
+    case DynamicSupervisor.start_child(sup, child_spec) do
       {:ok, pid} ->
-        with :ok <- two_faced_init(pid, child_spec) do
+        with :ok <- wait_for_initialization(pid, timeout) do
           {:ok, pid}
         end
 
       {:ok, pid, info} ->
-        with :ok <- two_faced_init(pid, child_spec) do
+        with :ok <- wait_for_initialization(pid, timeout) do
           {:ok, pid, info}
         end
 
@@ -131,12 +114,42 @@ defmodule TwoFaced do
     end
   end
 
-  defp two_faced_init(pid, child_spec) do
-    {mod, _fun, _args} = :proc_lib.initial_call(pid)
-    mod.init(pid, get_args(child_spec))
+  defp wait_for_initialization(pid, timeout) do
+    ref = Process.monitor(pid, alias: :reply_demonitor)
+
+    send(pid, {TwoFaced, :ack, ref})
+
+    receive do
+      {:ack, ^ref} ->
+        :ok
+
+      {:DOWN, ^ref, :process, ^pid, reason} ->
+        to_error(reason)
+    after
+      timeout ->
+        Process.demonitor(ref, [:flush])
+        Process.exit(pid, :kill)
+        {:error, :timeout}
+    end
   end
 
-  defp get_args({_mod, args}), do: args
-  defp get_args(mod) when is_atom(mod), do: []
-  defp get_args(%{start: {_mod, _fun, [args]}}), do: args
+  defp to_error(reason) do
+    case reason do
+      {{_kind, _} = error, _stacktrace} ->
+        # Extract structured errors from GenServer.call failures
+        {:error, error}
+
+      {%_{} = exception, _stacktrace} ->
+        # Extract exception structs
+        {:error, exception}
+
+      {reason, _stacktrace} when is_atom(reason) ->
+        # Simple atom reasons like :noproc, :timeout
+        {:error, reason}
+
+      reason ->
+        # Fallback for any other exit
+        {:error, reason}
+    end
+  end
 end
