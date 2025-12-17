@@ -9,12 +9,14 @@ defmodule TwoFaced do
 
   Applications that wish to utilize this functionality should:
 
-  1. Define their child processes to support a two-phase initialization pattern.
+  1. Define their child processes to support a two-phase initialization pattern, typically
+     using `c:GenServer.handle_continue/2` callbacks and handling the acknowledgment message
+     via `c:GenServer.handle_info/2`.
   2. Parent their child processes under a DynamicSupervisor.
   3. Use `start_child/2` or `start_child/3` to start and initialize the child processes.
 
   Handling two-pase initialization means deferring long-running setup tasks via
-  handle_continue/2 callbacks in GenServer or similar OTP behaviours, and handling
+  `c:GenServer.handle_continue/2` callbacks in GenServer or similar OTP behaviours, and handling
   an acknowledgment message (of type `t:ack_request/0`) to signal completion.
 
   ## Example
@@ -36,7 +38,7 @@ defmodule TwoFaced do
         @impl GenServer
         # Acknowledge initialization completion
         def handle_info({TwoFaced, :ack, ref}, state) do
-          send(ref, {:ack, ref})
+          TwoFaced.acknowledge(ref)
           {:noreply, state}
         end
       end

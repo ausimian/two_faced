@@ -38,7 +38,7 @@
     @impl GenServer
     # Acknowledge initialization completion
     def handle_info({TwoFaced, :ack, ref}, state) do
-      send(ref, {:ack, ref})
+      TwoFaced.acknowledge(ref)
       {:noreply, state}
     end
   end
