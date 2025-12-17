@@ -15,7 +15,7 @@ defmodule TwoFaced do
   2. Parent their child processes under a DynamicSupervisor.
   3. Use `start_child/2` or `start_child/3` to start and initialize the child processes.
 
-  Handling two-pase initialization means deferring long-running setup tasks via
+  Handling two-phase initialization means deferring long-running setup tasks via
   `c:GenServer.handle_continue/2` callbacks in GenServer or similar OTP behaviours, and handling
   an acknowledgment message (of type `t:ack_request/0`) to signal completion.
 

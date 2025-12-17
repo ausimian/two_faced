@@ -13,7 +13,7 @@
   2. Parent their child processes under a DynamicSupervisor.
   3. Use `TwoFaced.start_child/2,3` to start and initialize the child processes.
 
-  Handling two-pase initialization means deferring long-running setup tasks via
+  Handling two-phase initialization means deferring long-running setup tasks via
   handle_continue/2 callbacks in GenServer or similar OTP behaviours, and handling
   an acknowledgment message (of type `ack_request()`) to signal completion.
 
@@ -57,7 +57,7 @@ by adding `two_faced` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:two_faced, "~> 0.2.0"}
+    {:two_faced, "~> 0.2.2"}
   ]
 end
 ```
